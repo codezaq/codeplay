@@ -41,7 +41,7 @@ export const PROJECTS: Project[] = [
     title: 'Virtual Board Hand Recognition',
     category: 'ML',
     image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmUP9pzwguvnNX7gr1fjkipibW3PGmJQeXgTt3VT14gzjh',
-    tags: ['Python', 'Computer VVision', 'ML', 'Deep Learning'],
+    tags: ['Python', 'Computer Vision', 'ML', 'Deep Learning'],
     description: 'A virtual whiteboard application that uses hand gesture recognition for an interactive drawing experience. Users can draw, erase, and manipulate objects using hand movements.',
     docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.pdf',
     sourceLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.py',
