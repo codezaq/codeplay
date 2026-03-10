@@ -32,8 +32,8 @@ export const PROJECTS: Project[] = [
     image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmWQWvKbTGQAyde58wwF2hUoyqxcsHXmokf68Fod1WLdmX',
     tags: ['Python', 'Computer Vision', 'ML', 'OpenCV'],
     description: 'A real-time hand detection system for mouse control using computer vision techniques. The project includes a web interface for visualizing hand movements and controlling the cursor.',
-    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/mouse.py',
-    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Mouse%20Detector.pdf',
+    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Mouse%20Detector.pdf',
+    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/mouse.py',
     color: 'from-yellow-400 to-orange-500',
   },
   {
@@ -43,8 +43,18 @@ export const PROJECTS: Project[] = [
     image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmUP9pzwguvnNX7gr1fjkipibW3PGmJQeXgTt3VT14gzjh',
     tags: ['Python', 'Computer VVision', 'ML', 'Deep Learning'],
     description: 'A virtual whiteboard application that uses hand gesture recognition for an interactive drawing experience. Users can draw, erase, and manipulate objects using hand movements.',
-    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.py',
-    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.pdf',
+    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.pdf',
+    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Papan%20Tulis%20Virtual.py',
+  },
+  {
+    id: '5',
+    title: 'Zakat Dashboard Monitoring System',
+    category: 'Production',
+    image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmZ1KHVABxMgjFCQdBDVCW8nyFGPpPHGvhsFWkUQPqUqMw',
+    tags: ['React', 'CSS', 'Production', 'Typescript'],
+    description: 'Dashboard monitoring for Zakat System. Integrated with any spreadsheet and auto detection column',
+    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Zakat%20Web%20Docs.pdf',
+    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/tree/main/Zakatweb',
   },
 ];
 
