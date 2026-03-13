@@ -56,5 +56,15 @@ export const PROJECTS: Project[] = [
     docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Zakat%20Web%20Docs.pdf',
     sourceLink: 'https://github.com/LukmanZak/MLDeveloper/tree/main/Zakatweb',
   },
+  {
+    id: '6',
+    title: 'UI Glossarium Documentation',
+    category: 'Production',
+    image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmQNpcUojT72qiFGscdyadQEL1VuLUnV3gxjQN57sduwBk',
+    tags: ['React', 'CSS', 'Production', 'Typescript'],
+    description: 'UI Glossarium is a comprehensive documentation project that provides detailed guides and resources for UI design and development. The documentation covers best practices, design principles, and implementation strategies for creating effective user interfaces.',
+    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/UIGlossarium.pdf',
+    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/tree/main/UIglossarium',
+  },
 ];
 
