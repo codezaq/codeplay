@@ -66,5 +66,15 @@ export const PROJECTS: Project[] = [
     docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/UIGlossarium.pdf',
     sourceLink: 'https://github.com/LukmanZak/MLDeveloper/tree/main/UIglossarium',
   },
+  {
+    id: '7',
+    title: 'Teacher AI Assistant',
+    category: 'Production',
+    image: 'https://stupid-coffee-cow.myfilebase.com/ipfs/QmPbtMuAnAHrMUdeXbGBzaVRNV2W8TyFjPm2C4UM46aYAX',
+    tags: ['AI','React', 'CSS', 'Production', 'Typescript'],
+    description: 'Teacher AI Assistant is a project aimed at providing AI-driven support for teachers in managing their classrooms, creating lesson plans, and engaging with students.',
+    docsLink: 'https://github.com/LukmanZak/MLDeveloper/blob/main/Teacher%20for%20AI%20Administration.pdf',
+    sourceLink: 'https://github.com/LukmanZak/MLDeveloper/tree/main/edusmart-ai',
+  },
 ];
 
