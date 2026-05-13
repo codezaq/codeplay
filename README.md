@@ -41,6 +41,17 @@ This project is ready to be deployed to Vercel.
 
 -   `src/App.tsx`: Main application component.
 -   `src/constants.ts`: Project data and categories.
+-   `src/components/MusicPlayer.tsx`: Background music player component.
+-   `src/constants.ts`: Project data, categories, and **music configuration**.
 -   `src/types.ts`: TypeScript interfaces.
--   `vite.config.ts`: Vite configuration.
--   `vercel.json`: Vercel routing configuration.
+
+## Customizing Music
+
+To change the background music, open `src/constants.ts` and update the `MUSIC_CONFIG` object:
+
+```typescript
+export const MUSIC_CONFIG = {
+  url: 'https://your-music-url.mp3',
+  title: 'Your Song Title',
+};
+```

@@ -10,27 +10,150 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  Eye
+  Eye,
+  Loader2,
+  LogIn
 } from 'lucide-react';
 import { PROJECTS, CATEGORIES } from './constants';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Project } from './types';
+import { MusicPlayer } from './components/MusicPlayer';
+import { ThankYouModal } from './components/ThankYouModal';
+import { AdminPanel } from './components/AdminPanel';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { 
+  db, 
+  auth, 
+  onAuthStateChanged, 
+  onSnapshot, 
+  collection, 
+  doc,
+  getDoc,
+  query, 
+  orderBy,
+  handleFirestoreError,
+  OperationType
+} from './firebase';
 
 const ITEMS_PER_PAGE = 4;
 
 export default function App() {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  
+  const [user, setUser] = useState<any>(null);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [thankYouConfig, setThankYouConfig] = useState<{ isOpen: boolean; type: 'source' | 'docs'; link: string }>({
+    isOpen: false,
+    type: 'source',
+    link: ''
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialSyncing, setIsInitialSyncing] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Fetch projects from Firebase
+  useEffect(() => {
+    setIsInitialSyncing(true);
+    const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const projectsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Project[];
+      
+      // FALLBACK: If Firebase is empty, use PROJECTS from constants
+      if (projectsData.length === 0) {
+        setProjects(PROJECTS);
+      } else {
+        setProjects(projectsData);
+      }
+      setIsInitialSyncing(false);
+    }, (error) => {
+      console.warn("Firebase restricted or offline, using fallback data.");
+      setProjects(PROJECTS);
+      setIsInitialSyncing(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch categories from Firebase
+  useEffect(() => {
+    const q = query(collection(db, 'categories'), orderBy('name', 'asc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const categoriesData = snapshot.docs.map(doc => doc.data().name);
+      if (categoriesData.length > 0) {
+        setCategories(['All', ...categoriesData]);
+      } else {
+        setCategories(['All', ...CATEGORIES.filter(c => c !== 'All')]);
+      }
+    }, (error) => {
+      setCategories(['All', ...CATEGORIES.filter(c => c !== 'All')]);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Auth State Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Default role based on email if not in DB yet
+        const defaultRole = firebaseUser.email === 'lukmanzakaria9f@gmail.com' ? 'admin' : 'user';
+
+        // Check user role in Firestore
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        try {
+          const docSnap = await getDoc(userRef);
+          if (docSnap.exists()) {
+            const userData = { ...firebaseUser, ...docSnap.data() };
+            // If user wasn't logged in before, show welcome
+            if (!user) {
+              setShowWelcome(true);
+            }
+            setUser(userData);
+          } else {
+            if (!user) {
+              setShowWelcome(true);
+            }
+            setUser({ ...firebaseUser, role: defaultRole });
+          }
+        } catch (err) {
+          console.error("Error fetching user data:", err);
+          setUser({ ...firebaseUser, role: defaultRole });
+        }
+      } else {
+        setUser(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   // Filter logic
   const filteredProjects = useMemo(() => {
-    if (activeCategory === 'All') return PROJECTS;
-    return PROJECTS.filter(p => p.category === activeCategory);
-  }, [activeCategory]);
+    if (activeCategory === 'All') return projects;
+    return projects.filter(p => p.category === activeCategory);
+  }, [activeCategory, projects]);
 
   // Pagination logic
   const totalPages = Math.ceil(filteredProjects.length / ITEMS_PER_PAGE);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    } else if (totalPages === 0 && currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
   const paginatedProjects = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredProjects.slice(start, start + ITEMS_PER_PAGE);
@@ -42,8 +165,97 @@ export default function App() {
     setCurrentPage(1);
   };
 
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      setUser(null);
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+  };
+
+  const handleProjectAdded = () => {
+    // onSnapshot handles real-time updates, so we don't need to manual fetch
+  };
+
+  const handleEditProject = (project: Project) => {
+    setEditingProject(project);
+    setIsAdminOpen(true);
+  };
+
+  const handleCloseAdmin = () => {
+    setIsAdminOpen(false);
+    setEditingProject(null);
+  };
+
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-yellow-400 selection:text-black font-sans overflow-x-hidden">
+      <AnimatePresence>
+        {user && showWelcome && (
+          <WelcomeScreen 
+            userName={user.username || user.displayName || 'Admin'} 
+            onComplete={() => setShowWelcome(false)} 
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isInitialSyncing && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center"
+          >
+            <motion.div
+              animate={{ 
+                rotate: 360,
+                scale: [1, 1.1, 1]
+              }}
+              transition={{ 
+                rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+                scale: { duration: 1, repeat: Infinity }
+              }}
+              className="w-20 h-20 border-4 border-yellow-400 border-t-transparent rounded-full mb-8"
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="text-center max-w-md px-6"
+            >
+              {syncError ? (
+                <>
+                  <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-red-500/50">
+                    <X className="w-8 h-8 text-red-500" />
+                  </div>
+                  <h2 className="font-display text-2xl font-black uppercase italic tracking-tighter mb-4 text-red-500">
+                    Sync <span className="text-white">Failed</span>
+                  </h2>
+                  <p className="text-zinc-400 text-sm font-medium mb-8 leading-relaxed">
+                    {syncError}
+                  </p>
+                  <button 
+                    onClick={() => window.location.reload()}
+                    className="px-8 py-3 bg-white text-black font-black uppercase italic tracking-tighter text-sm hover:bg-yellow-400 transition-colors"
+                  >
+                    Retry Connection
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2 className="font-display text-2xl font-black uppercase italic tracking-tighter mb-2">
+                    Synchronizing <span className="text-yellow-400">Lab Data</span>
+                  </h2>
+                  <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em]">
+                    Connecting to Firebase...
+                  </p>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Background Decor */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-600/20 blur-[120px] rounded-full animate-pulse" />
@@ -66,16 +278,66 @@ export default function App() {
             </span>
           </motion.div>
           
-          <nav className="flex items-center gap-8">
-            <button 
+          <nav className="flex items-center gap-4 sm:gap-8">
+            {user ? (
+              <div className="flex items-center gap-4">
+                {user.role === 'admin' && (
+                  <button 
+                    onClick={() => setIsAdminOpen(true)}
+                    className="hidden sm:block text-[10px] font-black uppercase tracking-widest text-yellow-400 hover:text-white transition-colors"
+                  >
+                    Admin Panel
+                  </button>
+                )}
+                <button 
+                  onClick={handleLogout}
+                  className="px-4 py-2 bg-white/5 border border-white/10 text-white text-xs font-black uppercase rounded-full hover:bg-red-500 hover:text-white transition-all transform active:scale-95"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <motion.button 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={() => setIsAdminOpen(true)}
+                className="px-6 py-2 bg-white/5 border border-white/10 text-white text-sm font-black uppercase rounded-full hover:bg-white hover:text-black transition-all transform active:scale-95"
+              >
+                Login
+              </motion.button>
+            )}
+            <motion.button 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
               onClick={() => document.getElementById('projects')?.scrollIntoView({ behavior: 'smooth' })}
               className="px-6 py-2 bg-yellow-400 text-black text-sm font-black uppercase rounded-full hover:bg-white transition-all transform active:scale-95 shadow-lg shadow-yellow-400/10"
             >
               Let's Explore
-            </button>
+            </motion.button>
           </nav>
         </div>
       </header>
+
+      <MusicPlayer />
+      
+      <AdminPanel 
+        isOpen={isAdminOpen} 
+        onClose={handleCloseAdmin} 
+        user={user} 
+        onLogin={setUser} 
+        onProjectAdded={handleProjectAdded}
+        onCategoriesUpdated={() => {}}
+        editingProject={editingProject}
+      />
+
+      <ThankYouModal 
+        isOpen={thankYouConfig.isOpen} 
+        onClose={() => setThankYouConfig(prev => ({ ...prev, isOpen: false }))} 
+        projectTitle={selectedProject?.title || ''} 
+        type={thankYouConfig.type}
+        link={thankYouConfig.link}
+      />
 
       {/* Hero */}
       <section className="pt-40 pb-20 px-6">
@@ -85,21 +347,39 @@ export default function App() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ type: 'spring', damping: 12 }}
           >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8">
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8"
+            >
               <Sparkles className="w-4 h-4 text-yellow-400" />
               <span className="text-xs font-black uppercase tracking-[0.2em]">Experiments & Fun</span>
-            </div>
-            <h1 className="font-display text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter uppercase leading-[0.9] sm:leading-[0.85] mb-8">
+            </motion.div>
+            <motion.h1 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              className="font-display text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter uppercase leading-[0.9] sm:leading-[0.85] mb-8"
+            >
               Where Code <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-orange-500 to-pink-500">
                 Comes to Life
               </span>
-            </h1>
-            <p className="max-w-xl mx-auto text-zinc-400 text-lg md:text-xl font-medium mb-12">
+            </motion.h1>
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+              className="max-w-xl mx-auto text-zinc-400 text-lg md:text-xl font-medium mb-12"
+            >
               A collection of digital toys, interactive experiments, and creative coding projects. No boring stuff allowed!
-            </p>
+            </motion.p>
             <motion.a
               href="#projects"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5 }}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="inline-flex items-center gap-3 px-10 py-5 bg-yellow-400 text-black font-black uppercase rounded-2xl shadow-2xl shadow-yellow-400/20 group"
@@ -107,6 +387,33 @@ export default function App() {
               Explore Playground
               <Rocket className="w-5 h-5 group-hover:translate-y-[-4px] transition-transform" />
             </motion.a>
+
+            {/* Marquee Animation */}
+            <div className="mt-24 overflow-hidden py-8 border-y border-white/5 relative">
+              <div className="absolute inset-y-0 left-0 w-32 bg-gradient-to-r from-[#050505] to-transparent z-10" />
+              <div className="absolute inset-y-0 right-0 w-32 bg-gradient-to-l from-[#050505] to-transparent z-10" />
+              
+              <motion.div 
+                animate={{ x: [0, -1035] }}
+                transition={{ 
+                  duration: 30, 
+                  repeat: Infinity, 
+                  ease: "linear" 
+                }}
+                className="flex whitespace-nowrap gap-12"
+              >
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="flex items-center gap-12">
+                    <span className="text-5xl sm:text-7xl font-black uppercase italic text-white/30 tracking-tighter hover:text-yellow-400 transition-colors">Playground Lab</span>
+                    <Sparkles className="w-8 h-8 text-yellow-400/40 drop-shadow-[0_0_8px_rgba(250,204,21,0.3)]" />
+                    <span className="text-5xl sm:text-7xl font-black uppercase italic text-white/30 tracking-tighter hover:text-orange-500 transition-colors">Creative Code</span>
+                    <Rocket className="w-8 h-8 text-orange-500/40 drop-shadow-[0_0_8px_rgba(249,115,22,0.3)]" />
+                    <span className="text-5xl sm:text-7xl font-black uppercase italic text-white/30 tracking-tighter hover:text-pink-500 transition-colors">Interactive Art</span>
+                    <Gamepad2 className="w-8 h-8 text-pink-500/40 drop-shadow-[0_0_8px_rgba(236,72,153,0.3)]" />
+                  </div>
+                ))}
+              </motion.div>
+            </div>
           </motion.div>
         </div>
       </section>
@@ -115,103 +422,192 @@ export default function App() {
       <section id="projects" className="py-20 px-6">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-16">
-            <h2 className="font-display text-3xl font-black uppercase italic">The Lab</h2>
+            <motion.h2 
+              initial={{ opacity: 0, x: -30 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              className="font-display text-3xl font-black uppercase italic"
+            >
+              The Lab
+            </motion.h2>
             
             {/* Filter UI */}
-            <div className="flex flex-wrap justify-center gap-2 p-1.5 bg-zinc-900/50 rounded-2xl border border-white/5 backdrop-blur-sm">
-              {CATEGORIES.map(cat => (
-                <button
+            <div className="flex flex-wrap justify-center gap-2 p-1.5 bg-zinc-900/50 rounded-2xl border border-white/5 backdrop-blur-sm relative">
+              {categories.map((cat, idx) => (
+                <motion.button
                   key={cat}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: idx * 0.05 }}
                   onClick={() => handleCategoryChange(cat)}
-                  className={`px-4 sm:px-6 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all ${
+                  className={`relative px-4 sm:px-6 py-2 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-colors z-10 ${
                     activeCategory === cat 
-                      ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/20' 
+                      ? 'text-black' 
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
+                  {activeCategory === cat && (
+                    <motion.div
+                      layoutId="activeCategory"
+                      className="absolute inset-0 bg-yellow-400 rounded-xl -z-10 shadow-lg shadow-yellow-400/20"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
                   {cat}
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
 
           <AnimatePresence mode="wait">
-            <motion.div 
-              key={activeCategory + currentPage}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-10 min-h-[400px] sm:min-h-[600px]"
-            >
-              {paginatedProjects.map((project, idx) => (
-                <motion.div
-                  key={project.id}
-                  whileHover={{ y: -10 }}
-                  className="group relative"
+            {!user ? (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center min-h-[400px] w-full col-span-full border border-white/10 rounded-[3rem] bg-zinc-900/50 backdrop-blur-md p-10 text-center"
+              >
+                <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-6 shadow-xl border border-white/10">
+                  <Code2 className="w-10 h-10 text-yellow-400" />
+                </div>
+                <h3 className="font-display text-2xl sm:text-3xl font-black uppercase italic mb-4">
+                  Access <span className="text-yellow-400">Restricted</span>
+                </h3>
+                <p className="text-zinc-400 max-w-md mx-auto mb-8 font-medium">
+                  You need to be logged in to view the digital toys, interactive experiments, and creative coding projects in the lab.
+                </p>
+                <button 
+                  onClick={() => setIsAdminOpen(true)}
+                  className="px-10 py-4 bg-yellow-400 text-black font-black uppercase tracking-wide text-sm rounded-full shadow-lg shadow-yellow-400/20 hover:bg-white transition-all transform active:scale-95 flex items-center gap-2"
                 >
-                  <div className={`absolute inset-0 bg-gradient-to-br ${project.color || 'from-zinc-800 to-zinc-900'} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
-                  
-                  <div className="relative bg-zinc-900/50 border border-white/10 rounded-3xl sm:rounded-[2.5rem] p-6 sm:p-8 backdrop-blur-sm overflow-hidden h-full flex flex-col">
-                    <div className="relative aspect-video rounded-2xl overflow-hidden mb-8 border border-white/5 group/img">
-                      <img 
-                        src={project.image} 
-                        alt={project.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <button 
-                          onClick={() => setSelectedProject(project)}
-                          className="px-8 py-3 bg-yellow-400 text-black rounded-full font-black uppercase text-xs flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-all hover:scale-110 shadow-xl shadow-yellow-400/20"
-                        >
-                          <Eye className="w-4 h-4" />
-                          View Details
-                        </button>
-                      </div>
-                    </div>
+                  <LogIn className="w-5 h-5" />
+                  Sign In to Access
+                </button>
+              </motion.div>
+            ) : isRefreshing ? (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center min-h-[400px] w-full col-span-full"
+              >
+                <Loader2 className="w-12 h-12 text-yellow-400 animate-spin mb-4" />
+                <p className="text-zinc-500 font-black uppercase text-[10px] tracking-[0.2em]">Updating Lab Data...</p>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key={activeCategory + currentPage + projects.length}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-10 min-h-[400px] sm:min-h-[600px]"
+              >
+                {paginatedProjects.length > 0 ? (
+                  paginatedProjects.map((project, idx) => (
+                    <motion.div
+                      key={project.id}
+                      initial={{ opacity: 0, scale: 0.9, y: 30 }}
+                      whileInView={{ opacity: 1, scale: 1, y: 0 }}
+                      viewport={{ once: true, margin: "-50px" }}
+                      transition={{ 
+                        type: 'spring', 
+                        damping: 20, 
+                        stiffness: 100,
+                        delay: idx * 0.1 
+                      }}
+                      whileHover={{ y: -10 }}
+                      className="group relative"
+                    >
+                      <div className={`absolute inset-0 bg-gradient-to-br ${project.color || 'from-zinc-800 to-zinc-900'} opacity-0 group-hover:opacity-10 blur-2xl transition-opacity duration-500`} />
+                      
+                      <div className="relative bg-zinc-900/50 border border-white/10 rounded-3xl sm:rounded-[2.5rem] p-6 sm:p-8 backdrop-blur-sm overflow-hidden h-full flex flex-col">
+                        <div className="relative aspect-video rounded-2xl overflow-hidden mb-8 border border-white/5 group/img">
+                          <img 
+                            src={project.image} 
+                            alt={project.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
+                            <button 
+                              onClick={() => setSelectedProject(project)}
+                              className="px-8 py-3 bg-yellow-400 text-black rounded-full font-black uppercase text-xs flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-all hover:scale-110 shadow-xl shadow-yellow-400/20"
+                            >
+                              <Eye className="w-4 h-4" />
+                              View Details
+                            </button>
+                            
+                            {user?.role === 'admin' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditProject(project);
+                                }}
+                                className="px-8 py-3 bg-white text-black rounded-full font-black uppercase text-xs flex items-center gap-2 transform translate-y-4 group-hover:translate-y-0 transition-all hover:scale-110 shadow-xl"
+                              >
+                                <Code2 className="w-4 h-4" />
+                                Edit Project
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
-                    <div className="flex-1">
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        <span className="px-3 py-1 bg-yellow-400/10 text-yellow-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-yellow-400/20">
-                          {project.category}
-                        </span>
-                        {project.tags.map(tag => (
-                          <span key={tag} className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-zinc-400 border border-white/5">
-                            {tag}
-                          </span>
-                        ))}
+                        <div className="flex-1">
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            <span className="px-3 py-1 bg-yellow-400/10 text-yellow-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-yellow-400/20">
+                              {project.category}
+                            </span>
+                            {project.tags.map(tag => (
+                              <span key={tag} className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-zinc-400 border border-white/5">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        <h3 
+                            onClick={() => setSelectedProject(project)}
+                            className="text-2xl sm:text-3xl font-black uppercase italic mb-3 hover:text-yellow-400 transition-colors cursor-pointer inline-block"
+                          >
+                            {project.title}
+                          </h3>
+                          <p className="text-zinc-400 font-medium leading-relaxed mb-4">
+                            {project.description}
+                          </p>
+                        </div>
                       </div>
-                    <h3 
-                        onClick={() => setSelectedProject(project)}
-                        className="text-2xl sm:text-3xl font-black uppercase italic mb-3 hover:text-yellow-400 transition-colors cursor-pointer inline-block"
-                      >
-                        {project.title}
-                      </h3>
-                      <p className="text-zinc-400 font-medium leading-relaxed mb-4">
-                        {project.description}
-                      </p>
-                    </div>
+                    </motion.div>
+                  ))
+                ) : (
+                  <div className="col-span-full flex flex-col items-center justify-center text-zinc-600">
+                    <Terminal className="w-12 h-12 mb-4 opacity-20" />
+                    <p className="font-black uppercase text-xs tracking-widest">No projects found in this sector</p>
                   </div>
-                </motion.div>
-              ))}
-            </motion.div>
+                )}
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {/* Pagination UI */}
           {totalPages > 1 && (
             <div className="mt-20 flex items-center justify-center gap-4">
-              <button
+              <motion.button
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => prev - 1)}
                 className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-all"
               >
                 <ChevronLeft className="w-6 h-6" />
-              </button>
+              </motion.button>
               
               <div className="flex gap-2">
                 {Array.from({ length: totalPages }).map((_, i) => (
-                  <button
+                  <motion.button
                     key={i}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
                     onClick={() => setCurrentPage(i + 1)}
                     className={`w-12 h-12 rounded-xl font-black transition-all ${
                       currentPage === i + 1 
@@ -220,17 +616,20 @@ export default function App() {
                     }`}
                   >
                     {i + 1}
-                  </button>
+                  </motion.button>
                 ))}
               </div>
 
-              <button
+              <motion.button
+                initial={{ opacity: 0, x: 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => prev + 1)}
                 className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10 transition-all"
               >
                 <ChevronRight className="w-6 h-6" />
-              </button>
+              </motion.button>
             </div>
           )}
         </div>
@@ -292,24 +691,32 @@ export default function App() {
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-4">
-                    <motion.a
-                      href={selectedProject.docsLink}
+                    <motion.button
+                      onClick={() => setThankYouConfig({
+                        isOpen: true,
+                        type: 'docs',
+                        link: selectedProject.docsLink
+                      })}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="flex-1 flex items-center justify-center gap-3 py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-xs sm:text-sm font-black uppercase transition-all whitespace-nowrap px-4"
                     >
                       <BookOpen className="w-5 h-5 flex-shrink-0" />
                       Documentation
-                    </motion.a>
-                    <motion.a
-                      href={selectedProject.sourceLink}
+                    </motion.button>
+                    <motion.button
+                      onClick={() => setThankYouConfig({
+                        isOpen: true,
+                        type: 'source',
+                        link: selectedProject.sourceLink
+                      })}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                       className="flex-1 flex items-center justify-center gap-3 py-5 bg-yellow-400 text-black rounded-2xl text-xs sm:text-sm font-black uppercase transition-all whitespace-nowrap px-4"
                     >
                       <Github className="w-5 h-5 flex-shrink-0" />
                       Source Code
-                    </motion.a>
+                    </motion.button>
                   </div>
                 </div>
               </div>
